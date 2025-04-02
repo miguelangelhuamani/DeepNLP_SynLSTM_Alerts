@@ -6,7 +6,8 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from src.models import NNCRF
-from src.utils import load_nlp_data, Accuracy, save_model, set_seed, F1Score
+from src.utils import load_umt_loaders, Accuracy, save_model, set_seed, F1Score
+
 from src.config import Config
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -34,7 +35,6 @@ def adjust_lr(optimizer, epoch):
     print(f"[Epoch {epoch}] Learning rate adjusted to {lr:.6f}")
 
 
-from sklearn.metrics import f1_score
 
 def train(model, optimizer, train_loader, device, epoch, config):
     model.train()
@@ -77,15 +77,27 @@ def train(model, optimizer, train_loader, device, epoch, config):
         train_loss += loss.item()
 
         # Cálculo de las métricas para NER
-        flat_preds_ner = torch.tensor([p for seq in preds_ner for p in seq], device=device)
+        flat_preds_ner = []
+        for pred_seq, length in zip(preds_ner, seq_lens):
+            if isinstance(pred_seq, torch.Tensor):
+                flat_preds_ner.extend(pred_seq[:length].tolist())
+            else:
+                flat_preds_ner.extend(pred_seq[:length])
+        flat_preds_ner = torch.tensor(flat_preds_ner, device=device)
+
+
         flat_labels_ner = label_tensor.view(-1)
         mask_ner = flat_labels_ner != config.label2idx[config.PAD]
         accuracy_ner.update(flat_preds_ner, flat_labels_ner[mask_ner])
         f1_ner.update(flat_preds_ner, flat_labels_ner[mask_ner])
 
         # Cálculo de las métricas para SA
+        #print(preds_sa)
         flat_preds_sa = preds_sa
         accuracy_sa.update(flat_preds_sa, sentiment_labels)
+        from collections import Counter
+        #print(Counter(sentiment_labels.tolist()))
+
         f1_sa.update(flat_preds_sa, sentiment_labels)
 
     # Cálculo de las métricas por epoch para NER y SA
@@ -140,7 +152,15 @@ def validate(model, val_loader, device, config):
             val_loss += loss_value.item()
 
             # Cálculo de las métricas para NER
-            flat_preds_ner = torch.tensor([p for seq in preds_ner for p in seq], device=device)
+            flat_preds_ner = []
+            for pred_seq, length in zip(preds_ner, seq_lens):
+                if isinstance(pred_seq, torch.Tensor):
+                    flat_preds_ner.extend(pred_seq[:length].tolist())
+                else:
+                    flat_preds_ner.extend(pred_seq[:length])
+            flat_preds_ner = torch.tensor(flat_preds_ner, device=device)
+
+
             flat_labels_ner = label_tensor.view(-1)
             mask_ner = flat_labels_ner != config.label2idx[config.PAD]
             accuracy_ner.update(flat_preds_ner, flat_labels_ner[mask_ner])
@@ -170,7 +190,8 @@ def validate(model, val_loader, device, config):
 def main():
     results = []
     config = Config(device=device)
-    train_loader, val_loader, test_loader = load_nlp_data(config, batch_size=BATCH_SIZE)
+    train_loader, val_loader, test_loader = load_umt_loaders(config, batch_size=BATCH_SIZE)
+
 
     print(f"\n====== Training with SGD (lr={LEARNING_RATE}, decay={DECAY}) ======")
 
@@ -189,13 +210,25 @@ def main():
         val_loss, val_acc = validate(model, val_loader, device, config)
 
         print(
-            f"Epoch {epoch}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.4f}, Val Loss={val_loss:.4f}, Val Acc={val_acc:.4f}"
+            f"Epoch {epoch}: "
+            f"Train Loss={train_loss:.4f} | "
+            f"Train NER Acc={train_acc['train_acc_ner']:.4f} F1={train_acc['train_f1_ner']:.4f} | "
+            f"Train SA Acc={train_acc['train_acc_sa']:.4f} F1={train_acc['train_f1_sa']:.4f} || "
+            f"Val NER Acc={val_acc['val_acc_ner']:.4f} F1={val_acc['val_f1_ner']:.4f} | "
+            f"Val SA Acc={val_acc['val_acc_sa']:.4f} F1={val_acc['val_f1_sa']:.4f}"
         )
 
-        writer.add_scalar("Loss/train", train_loss, epoch)
-        writer.add_scalar("Accuracy/train", train_acc, epoch)
-        writer.add_scalar("Loss/val", val_loss, epoch)
-        writer.add_scalar("Accuracy/val", val_acc, epoch)
+
+        writer.add_scalar("NER_Accuracy/train", train_acc["train_acc_ner"], epoch)
+        writer.add_scalar("NER_F1/train", train_acc["train_f1_ner"], epoch)
+        writer.add_scalar("SA_Accuracy/train", train_acc["train_acc_sa"], epoch)
+        writer.add_scalar("SA_F1/train", train_acc["train_f1_sa"], epoch)
+
+        writer.add_scalar("NER_Accuracy/val", val_acc["val_acc_ner"], epoch)
+        writer.add_scalar("NER_F1/val", val_acc["val_f1_ner"], epoch)
+        writer.add_scalar("SA_Accuracy/val", val_acc["val_acc_sa"], epoch)
+        writer.add_scalar("SA_F1/val", val_acc["val_f1_sa"], epoch)
+
 
     save_model(model, config, "ner_model_synlstm")
     writer.close()

@@ -171,19 +171,25 @@ class NNCRF(nn.Module):
         # Paso 8: Capa de salida para Sentimiento (SA)
         emissions_sa = self.hidden2tag_sa(lstm_out)
         emissions_sa_reduced = emissions_sa.mean(dim=1)
-        print(f"emissions_sa shape: {emissions_sa_reduced.shape}")
-        print(f"sentiment_labels shape: {sentiment_labels.shape}")
+        #print(f"emissions_sa shape: {emissions_sa_reduced.shape}")
+        #print(f"sentiment_labels shape: {sentiment_labels.shape}")
 
 
         if tags is not None and sentiment_labels is not None:
-            # Cálculo de pérdidas para NER
             loss_ner = -self.crf(emissions_ner, tags, mask=mask)
-            print(f"Loss NER: {loss_ner}")
-            # Cálculo de pérdidas para Sentimiento (SA)
-            loss_sa = F.cross_entropy(emissions_sa_reduced, sentiment_labels)
-            print(f"Loss SA: {loss_sa}")
-            # Total loss
+            # Definir pesos: inversamente proporcionales a la frecuencia
+            class_weights = torch.tensor([3.0, 1.0, 2.0], device=self.device)  # Neg: 10%, Neu: 60%, Pos: 30%
+            loss_sa = F.cross_entropy(emissions_sa_reduced, sentiment_labels, weight=class_weights)
+
             loss = loss_ner + loss_sa
-            return loss, emissions_ner, emissions_sa
+
+            decoded_tags = self.crf.decode(emissions_ner, mask=mask)
+            predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
+            #print(f"emissions: {emissions_sa_reduced}")
+            return loss, decoded_tags, predicted_sentiments
         else:
-            return emissions_ner, emissions_sa
+            # En evaluación
+            decoded_tags = self.crf.decode(emissions_ner, mask=mask)
+            predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
+            return decoded_tags, predicted_sentiments
+
