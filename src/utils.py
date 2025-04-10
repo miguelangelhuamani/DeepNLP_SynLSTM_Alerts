@@ -9,7 +9,7 @@ from torch_geometric.data import Data, Batch
 import spacy
 from transformers import pipeline
 from sklearn.metrics import f1_score
-from src.models import NNCRF
+from models import NNCRF
 
 nlp = spacy.load("en_core_web_sm")
 sa_pipeline = pipeline('sentiment-analysis', model="cardiffnlp/twitter-roberta-base-sentiment")
@@ -24,7 +24,7 @@ def get_sentiment(text):
     else:
         return 1  # NEUTRAL
 
-def balance_by_sentiment(sentences, labels, sentiments, max_per_class=333):
+def balance_by_sentiment(sentences, labels, sentiments, max_per_class=10000):
     class_buckets = {0: [], 1: [], 2: []}
     
     for s, l, sa in zip(sentences, labels, sentiments):
@@ -165,7 +165,6 @@ def load_umt_data():
     train_sa = generate_sentiment_labels(train_sentences)
     val_sa = generate_sentiment_labels(val_sentences)
     test_sa = generate_sentiment_labels(test_sentences)
-    train_sentences, train_labels, train_sa = balance_by_sentiment(train_sentences, train_labels, train_sa, max_per_class=333)
 
     with open(data_file, 'wb') as f:
         pickle.dump((train_sentences, train_labels, train_sa, val_sentences, val_labels, val_sa, test_sentences, test_labels, test_sa), f)
