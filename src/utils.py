@@ -143,16 +143,48 @@ def parse_umt_file(file_path):
         labels.append(current_labels)
     return sentences, labels
 
+def parse_conll3_file(file_path):
+    sentences, labels = [], []
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    current_tokens, current_labels = [], []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if current_tokens:
+                sentences.append(current_tokens)
+                labels.append(current_labels)
+                current_tokens, current_labels = [], []
+        else:
+
+            token = line.split(" ")[0]
+            tag = line.split(" ")[-1]
+            current_tokens.append(token)
+            current_labels.append(tag)
+            
+    if current_tokens:
+        sentences.append(current_tokens)
+        labels.append(current_labels)
+    return sentences, labels
+    
+        
+    
+
+
+
+
+
 def load_umt_data():
-    data_file = 'umt_data.pkl'
+    data_file = 'conll2003_data.pkl'
     if os.path.exists(data_file):
         print("Cargando datos UMT desde archivo.")
         with open(data_file, 'rb') as f:
             return pickle.load(f)
 
-    train_sentences, train_labels = parse_umt_file("data/train.txt")
-    val_sentences, val_labels = parse_umt_file("data/valid.txt")
-    test_sentences, test_labels = parse_umt_file("data/test.txt")
+    train_sentences, train_labels = parse_conll3_file("data/conll3/train.txt")
+    val_sentences, val_labels = parse_conll3_file("data/conll3/valid.txt")
+    test_sentences, test_labels = parse_conll3_file("data/conll3/test.txt")
 
     def generate_sentiment_labels(sentences):
         sa_labels = []

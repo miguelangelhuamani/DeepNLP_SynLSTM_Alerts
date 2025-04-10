@@ -126,19 +126,31 @@ class NNCRF(nn.Module):
             config.word_emb_dim, config.hidden_dim // 2, num_layers=2, batch_first=True, bidirectional=True)
         
         # Capa de salida para NER
-        self.hidden2tag_ner = nn.Linear(config.hidden_dim, config.label_size)
-        self.crf = CRF(config.label_size, batch_first=True)
-
-        # Capa de salida para Sentimiento (SA)
-        self.dropout_sa = nn.Dropout(0.5)  # Higher dropout for SA
-        self.hidden2tag_sa = nn.Sequential(
-            nn.Linear(config.hidden_dim, 3)
+        self.hidden2tag_ner = self.hidden2tag_ner = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(config.hidden_dim, config.hidden_dim // 2),
+            nn.LayerNorm(config.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(config.hidden_dim // 2, config.label_size)
         )
 
-        # Parámetros para incertidumbre
-        self.log_var_ner = nn.Parameter(torch.zeros(1))
-        self.log_var_sa = nn.Parameter(torch.zeros(1))
+        # Capa de salida para Sentimiento (SA)
+        self.hidden2tag_sa = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(config.hidden_dim*3, 64),  # Reducir dimensionalidad
+            nn.LayerNorm(64),  # Normalización para estabilidad
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(64, 3)
+        )
+            
 
+    def focal_loss(self, logits, targets, alpha=0.5, gamma=2.0):
+        """Focal Loss para combatir el desbalance de clases y ejemplos difíciles."""
+        CE = F.cross_entropy(logits, targets, reduction='none')
+        pt = torch.exp(-CE)
+        loss = alpha * (1-pt)**gamma * CE
+        return loss.mean()
 
     def forward(
         self, word_inputs, char_inputs, char_lens, batch_graph, lengths, tags=None, sentiment_labels=None
@@ -182,9 +194,13 @@ class NNCRF(nn.Module):
         mask = word_inputs != self.pad_idx
 
         # Paso 8: Capa de salida para Sentimiento (SA)
-        pooled_features = torch.mean(lstm_out, dim=1)
-        emissions_sa = self.dropout_sa(pooled_features)
-        emissions_sa = self.hidden2tag_sa(emissions_sa)
+        # Combina diferentes estrategias de pooling
+        avg_pool = torch.mean(lstm_out_sa, dim=1)  # Average pooling
+        max_pool, _ = torch.max(lstm_out_sa, dim=1)  # Max pooling
+        last_token = lstm_out_sa[:, -1, :]  # Último token
+        pooled_features = torch.cat([avg_pool, max_pool, last_token], dim=1)
+
+        emissions_sa = self.hidden2tag_sa(pooled_features)
         emissions_sa_reduced = emissions_sa
 
         if tags is not None and sentiment_labels is not None:
@@ -195,11 +211,14 @@ class NNCRF(nn.Module):
                 ignore_index=self.pad_idx
             )
             
-            # Loss para SA - sin cambios
-            class_weights = torch.tensor([3.0, 1.0, 2.0], device=self.device)
-            loss_sa = F.cross_entropy(emissions_sa_reduced, sentiment_labels, weight=class_weights)
+            # Loss para SA usando focal loss
+            loss_sa = self.focal_loss(
+                emissions_sa, 
+                sentiment_labels, 
+                alpha=0.7,  # Enfoca más en ejemplos difíciles
+                gamma=2.0
+            )
 
-    
             loss = loss_ner + loss_sa
             # Predicción usando argmax en lugar de CRF.decode
             predicted_tags = emissions_ner.argmax(dim=-1)

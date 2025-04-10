@@ -18,7 +18,7 @@ class Config:
         self.word_emb_dim = 100  # tamaño de GloVe
         self.char_emb_dim = 30
         self.char_hidden_dim = 50
-        self.hidden_dim = 200
+        self.hidden_dim = 128
         self.gcn_hidden_dim = 50
         self.dep_emb_dim = 30
 

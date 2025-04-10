@@ -5,7 +5,6 @@ from tqdm.auto import tqdm
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.cuda.amp import GradScaler, autocast
 
 from models import NNCRF
 from utils import load_umt_loaders, Accuracy, save_model, set_seed, F1Score
@@ -26,12 +25,10 @@ torch.set_num_threads(8)
 # Hyperparameters optimized for multi-task learning
 EPOCHS = 30  # Increased for better convergence
 BATCH_SIZE = 64  # Decreased for better generalization
-LEARNING_RATE = 3e-4  # Better default for AdamW
-WEIGHT_DECAY = 0.01  # Increased for better regularization
+LEARNING_RATE = 1e-3  # Better default for AdamW
+WEIGHT_DECAY = 0.05  # Increased for better regularization
 GRAD_CLIP = 1.0  # Keep gradient clipping
 GRAD_ACCUM_STEPS = 2  # Gradient accumulation (effective batch: 64*2=128)
-USE_AMP = torch.cuda.is_available()  # Mixed precision when available
-WARMUP_RATIO = 0.1  # Warm up for 10% of total steps
 PATIENCE = 3  # Early stopping patience
 SCHEDULER_PCT_START = 0.3  # Percent of training spent increasing LR
 MAX_LR_FACTOR = 10  # Maximum LR will be LEARNING_RATE * MAX_LR_FACTOR
@@ -42,7 +39,7 @@ PATIENCE_SA = 5   # Patience for SA task
 MIN_DELTA = 0.001 # Minimum improvement required
 
 
-def train(model, optimizer, scheduler, train_loader, device, epoch, config, scaler=None):
+def train(model, optimizer, train_loader, device, epoch, config, scaler=None):
     model.train()
     train_loss = 0.0
 
@@ -73,27 +70,22 @@ def train(model, optimizer, scheduler, train_loader, device, epoch, config, scal
         if accum_iter == 0:
             optimizer.zero_grad()
 
-        # Mixed precision training
-        with autocast(enabled=USE_AMP):
-            # Forward pass
-            loss, preds_ner, preds_sa = model(
-                word_seq_tensor,
-                char_inputs,
-                char_lens,
-                edge_index,
-                seq_lens,
-                tags=label_tensor,
-                sentiment_labels=sentiment_labels
-            )
-            
-            # Scale loss for gradient accumulation
-            loss = loss / GRAD_ACCUM_STEPS
+        # Normal forward pass (sin autocast)
+        loss, preds_ner, preds_sa = model(
+            word_seq_tensor,
+            char_inputs,
+            char_lens,
+            edge_index,
+            seq_lens,
+            tags=label_tensor,
+            sentiment_labels=sentiment_labels
+        )
+        
+        # Scale loss for gradient accumulation
+        loss = loss / GRAD_ACCUM_STEPS
 
-        # Backward pass with scaler if using mixed precision
-        if USE_AMP:
-            scaler.scale(loss).backward()
-        else:
-            loss.backward()
+        # Normal backward pass (sin scaler)
+        loss.backward()
         
         accum_iter += 1
         train_loss += loss.item() * GRAD_ACCUM_STEPS  # Undo scaling for logging
@@ -101,23 +93,14 @@ def train(model, optimizer, scheduler, train_loader, device, epoch, config, scal
         # Update weights when we reach accumulation steps or at the last batch
         if accum_iter == GRAD_ACCUM_STEPS or batch_idx == len(train_loader) - 1:
             # Gradient clipping
-            if USE_AMP:
-                scaler.unscale_(optimizer)
-                
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRAD_CLIP)
             
-            if USE_AMP:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-                
-            scheduler.step()
+            # Normal optimizer step (sin scaler)
+            optimizer.step()
+
             accum_iter = 0
             
-            # Update learning rate in progress bar
-            current_lr = scheduler.get_last_lr()[0]
-            progress_bar.set_postfix(loss=train_loss/(batch_idx+1), lr=f"{current_lr:.6f}")
+
 
         # Calculate metrics for NER
         flat_preds_ner = []
@@ -173,17 +156,16 @@ def validate(model, val_loader, device, config):
             edge_index,
             sentiment_labels
         ) in tqdm(val_loader, desc="Validating"):
-            # Mixed precision for validation (inference only)
-            with autocast(enabled=USE_AMP):
-                loss_value, preds_ner, preds_sa = model(
-                    word_seq_tensor,
-                    char_inputs,
-                    char_lens,
-                    edge_index,
-                    seq_lens,
-                    tags=label_tensor,
-                    sentiment_labels=sentiment_labels
-                )
+            # Forward pass
+            loss_value, preds_ner, preds_sa = model(
+                word_seq_tensor,
+                char_inputs,
+                char_lens,
+                edge_index,
+                seq_lens,
+                tags=label_tensor,
+                sentiment_labels=sentiment_labels
+            )
 
             val_loss += loss_value.item()
 
@@ -226,34 +208,29 @@ def main():
 
     model = NNCRF(config).to(device)
     
+    # Separate parameters for SA and other tasks
+    sa_params = [param for name, param in model.named_parameters() if 'sa' in name]
+    other_params = [param for name, param in model.named_parameters() if 'sa' not in name]
+    
     # Optimizer with weight decay
-    optimizer = torch.optim.AdamW(
-        model.parameters(), 
-        lr=LEARNING_RATE, 
-        weight_decay=WEIGHT_DECAY,
-        betas=(0.9, 0.999),
-        eps=1e-8
-    )
+    optimizer = torch.optim.AdamW([
+        {'params': sa_params, 'lr': LEARNING_RATE* 3 , 'weight_decay': WEIGHT_DECAY },
+        {'params': other_params, 'lr': LEARNING_RATE, 'weight_decay': WEIGHT_DECAY}
+    ], betas=(0.9, 0.999), eps=1e-8)
     
     # Calculate total steps and warmup steps
     total_steps = len(train_loader) * EPOCHS // GRAD_ACCUM_STEPS
     
-    # OneCycle scheduler - increases LR to max_lr, then decreases to min_lr
-    scheduler = OneCycleLR(
-        optimizer,
-        max_lr=LEARNING_RATE * MAX_LR_FACTOR,
-        total_steps=total_steps,
-        pct_start=SCHEDULER_PCT_START,
-        anneal_strategy='cos',
-        div_factor=MAX_LR_FACTOR,  # initial_lr = max_lr / div_factor
-        final_div_factor=MAX_LR_FACTOR * 10  # final_lr = initial_lr / final_div_factor
+
+    
+    # Alternativa: ReduceLROnPlateau - reduce LR cuando la métrica se estanca
+    scheduler_sa = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='max', factor=0.5, patience=2,
+        min_lr=1e-6, verbose=True
     )
     
-    # Mixed precision scaler
-    scaler = GradScaler() if USE_AMP else None
-    
     # Setup tensorboard
-    writer = SummaryWriter(log_dir=f"runs/ner_sa_onecycle_lr{LEARNING_RATE}_wd{WEIGHT_DECAY}")
+    writer = SummaryWriter(log_dir=f"runs/ner_sa_reduce_lr_on_plateau_{LEARNING_RATE}_wd{WEIGHT_DECAY}")
     
     # Early stopping variables - separate for each task
     best_val_f1_ner = 0.0
@@ -268,11 +245,26 @@ def main():
         
         # Training phase
         train_loss, train_metrics = train(
-            model, optimizer, scheduler, train_loader, device, epoch, config, scaler
+            model, optimizer, train_loader, device, epoch, config
         )
         
         # Validation phase
-        val_loss, val_metrics = validate(model, val_loader, device, config)
+        val_loss, val_metrics = validate(
+            model, val_loader, device, config
+        )
+        
+        # Actualizar scheduler basado en la métrica de validación
+        scheduler_sa.step(val_metrics['val_f1_sa'])
+        
+        # ====== AÑADIR AQUÍ - Mostrar y registrar pérdidas ======
+        # Mostrar pérdidas en consola
+        print(f"Loss - Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        
+        # Registrar pérdidas en TensorBoard
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("Loss/val", val_loss, epoch)
+        
+
         
         # Task-specific early stopping check for NER
         if val_metrics['val_f1_ner'] > best_val_f1_ner + MIN_DELTA:
