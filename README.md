@@ -36,6 +36,24 @@ El sistema desarrollado procesa textos para identificar entidades como personas,
    pip install -r requirements.txt
    python -m spacy download en_core_web_sm
    ```
+3. **Descargar los embeddings de GloVe**
+
+   Para que el sistema funcione correctamente, necesitas los vectores preentrenados de GloVe (100 dimensiones).
+
+   1. Accede a la siguiente página y se descargará el archivo `.zip` automáticamente:  
+      [http://nlp.stanford.edu/data/glove.6B.zip](http://nlp.stanford.edu/data/glove.6B.zip)
+   
+   2. Extrae el contenido del archivo ZIP.
+   
+   3. Copia el fichero `glove.6B.100d.txt` a la **raíz del proyecto**, es decir, al mismo nivel que la carpeta `src/`, como se muestra a continuación:
+      ```bash
+      /tu-proyecto/
+      ├── src/
+      ├── glove.6B.100d.txt
+      ├── requirements.txt
+      ├── venv/
+      └── README.md
+
 
 ## Uso
 
