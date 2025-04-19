@@ -12,17 +12,12 @@ from sklearn.metrics import f1_score
 from models import NNCRF
 
 nlp = spacy.load("en_core_web_sm")
-sa_pipeline = pipeline('sentiment-analysis', model="cardiffnlp/twitter-roberta-base-sentiment")
+sa_pipeline = pipeline('sentiment-analysis', model="siebert/sentiment-roberta-large-english")
 
-def get_sentiment(text):
+def get_sentiment_binary(text):
     result = sa_pipeline(text)
     label = result[0]['label']
-    if label == 'LABEL_2':
-        return 2  # POSITIVE
-    elif label == 'LABEL_0':
-        return 0  # NEGATIVE
-    else:
-        return 1  # NEUTRAL
+    return 1 if label == 'POSITIVE' else 0
 
 def balance_by_sentiment(sentences, labels, sentiments, max_per_class=10000):
     class_buckets = {0: [], 1: [], 2: []}

@@ -141,7 +141,7 @@ class NNCRF(nn.Module):
             nn.LayerNorm(64),  # Normalización para estabilidad
             nn.ReLU(),
             nn.Dropout(0.4),
-            nn.Linear(64, 3)
+            nn.Linear(64, 2)
         )
             
 
