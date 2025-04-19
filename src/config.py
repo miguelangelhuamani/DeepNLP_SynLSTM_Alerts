@@ -82,7 +82,7 @@ class Config:
                         self.dep2idx[dep_label] = len(self.dep2idx)
                         self.idx2dep.append(dep_label)
 
-    def init_embeddings(self, emb_path="../glove.6B.100d.txt"):
+    def init_embeddings(self, emb_path="./glove.6B.100d.txt"):
         """
         Carga embeddings preentrenados y los asigna a self.word_embedding.
         Si una palabra del vocabulario no está en GloVe, se inicializa aleatoriamente.

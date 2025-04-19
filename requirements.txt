@@ -15,4 +15,6 @@ pytest==7.4.4
 pytest-order==1.2.0
 torch_geometric==2.6.1
 spacy>=3.5.0
-transformers
+transformers>=4.36.0
+accelerate>=0.21.0
+bitsandbytes>=0.41.0
