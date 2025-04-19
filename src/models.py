@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
-from torchcrf import CRF
 
 
 class CharBiLSTM(nn.Module):
@@ -105,14 +104,13 @@ class NNCRF(nn.Module):
         self.word_emb = nn.Embedding.from_pretrained(
             torch.FloatTensor(config.word_embedding), freeze=False
         )
-        
+
         # Embedding de dependencias (GCN)
         self.dep_embedding = nn.Embedding(len(config.dep2idx), config.dep_emb_dim)
 
         # GCN (conjunto de características combinadas)
         self.gcn = GCNLayer(
-            config.word_emb_dim + config.dep_emb_dim, 
-            config.gcn_hidden_dim
+            config.word_emb_dim + config.dep_emb_dim, config.gcn_hidden_dim
         )
 
         # Syn-LSTM para combinar todas las características
@@ -121,45 +119,58 @@ class NNCRF(nn.Module):
             config.hidden_dim,
             config.gcn_hidden_dim,
         )
-        
+
         self.lstm_sa = nn.LSTM(
-            config.word_emb_dim, config.hidden_dim // 2, num_layers=2, batch_first=True, bidirectional=True)
-        
+            config.word_emb_dim,
+            config.hidden_dim // 2,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True,
+        )
+
         # Capa de salida para NER
         self.hidden2tag_ner = self.hidden2tag_ner = nn.Sequential(
             nn.Dropout(0.3),
             nn.Linear(config.hidden_dim, config.hidden_dim // 2),
             nn.LayerNorm(config.hidden_dim // 2),
             nn.ReLU(),
-            nn.Linear(config.hidden_dim // 2, config.label_size)
+            nn.Linear(config.hidden_dim // 2, config.label_size),
         )
 
         # Capa de salida para Sentimiento (SA)
         self.hidden2tag_sa = nn.Sequential(
             nn.Dropout(0.3),
-            nn.Linear(config.hidden_dim*3, 64),  # Reducir dimensionalidad
+            nn.Linear(config.hidden_dim * 3, 64),  # Reducir dimensionalidad
             nn.LayerNorm(64),  # Normalización para estabilidad
             nn.ReLU(),
             nn.Dropout(0.4),
-            nn.Linear(64, 2)
+            nn.Linear(64, 2),
         )
-            
 
     def focal_loss(self, logits, targets, alpha=0.5, gamma=2.0):
         """Focal Loss para combatir el desbalance de clases y ejemplos difíciles."""
-        CE = F.cross_entropy(logits, targets, reduction='none')
+        CE = F.cross_entropy(logits, targets, reduction="none")
         pt = torch.exp(-CE)
-        loss = alpha * (1-pt)**gamma * CE
+        loss = alpha * (1 - pt) ** gamma * CE
         return loss.mean()
 
     def forward(
-        self, word_inputs, char_inputs, char_lens, batch_graph, lengths, tags=None, sentiment_labels=None
+        self,
+        word_inputs,
+        char_inputs,
+        char_lens,
+        batch_graph,
+        lengths,
+        tags=None,
+        sentiment_labels=None,
     ):
         batch_size, seq_len = word_inputs.size()
 
         # Paso 1: Obtener características a partir de BiLSTM de caracteres
         char_features = self.char_bilstm(char_inputs, char_lens)
-        char_features = char_features.view(batch_size, seq_len, -1)  # Recuperamos (B, S, dim)
+        char_features = char_features.view(
+            batch_size, seq_len, -1
+        )  # Recuperamos (B, S, dim)
 
         # Paso 2: Obtener embeddings de palabras
         word_embeddings = self.word_emb(word_inputs)
@@ -169,7 +180,9 @@ class NNCRF(nn.Module):
         batch_graph.x = input_gcn.view(-1, input_gcn.shape[-1])  # (batch*seq_len, dim)
 
         # Paso 4: Propagar dependencias a través de GCN
-        dep_embs = self.dep_embedding(batch_graph.dep_labels)  # (num_edges, dep_emb_dim)
+        dep_embs = self.dep_embedding(
+            batch_graph.dep_labels
+        )  # (num_edges, dep_emb_dim)
         edge_targets = batch_graph.edge_index[1]
 
         dep_embs_expanded = torch.zeros(
@@ -186,11 +199,11 @@ class NNCRF(nn.Module):
         # Paso 6: Combinar todas las características
         combined_input = torch.cat([word_embeddings, gcn_out], dim=-1)
         lstm_out = self.syn_lstm(combined_input, gcn_out)
-        
+
         lstm_out_sa, _ = self.lstm_sa(word_embeddings)
 
         # Paso 7: Capa de salida para NER
-        emissions_ner = self.hidden2tag_ner(lstm_out) #(B, S, label_size)
+        emissions_ner = self.hidden2tag_ner(lstm_out)  # (B, S, label_size)
         mask = word_inputs != self.pad_idx
 
         # Paso 8: Capa de salida para Sentimiento (SA)
@@ -206,39 +219,36 @@ class NNCRF(nn.Module):
         if tags is not None and sentiment_labels is not None:
             # Usar solo Cross Entropy para NER (eliminar CRF)
             loss_ner = F.cross_entropy(
-                emissions_ner.view(-1, emissions_ner.size(-1)), 
-                tags.view(-1), 
-                ignore_index=self.pad_idx
+                emissions_ner.view(-1, emissions_ner.size(-1)),
+                tags.view(-1),
+                ignore_index=self.pad_idx,
             )
-            
+
             # Loss para SA usando focal loss
             loss_sa = self.focal_loss(
-                emissions_sa, 
-                sentiment_labels, 
+                emissions_sa,
+                sentiment_labels,
                 alpha=0.7,  # Enfoca más en ejemplos difíciles
-                gamma=2.0
+                gamma=2.0,
             )
 
             loss = loss_ner + loss_sa
-            # Predicción usando argmax en lugar de CRF.decode
+
             predicted_tags = emissions_ner.argmax(dim=-1)
-            # Aplicar máscara para ignorar padding
-            predicted_tags = [pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)]
-            
+
+            predicted_tags = [
+                pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)
+            ]
+
             predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
             return loss, predicted_tags, predicted_sentiments
         else:
-            # En evaluación - usar argmax en lugar de CRF
+
             predicted_tags = emissions_ner.argmax(dim=-1)
-            # Aplicar máscara para ignorar padding
-            predicted_tags = [pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)]
-            
+
+            predicted_tags = [
+                pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)
+            ]
+
             predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
             return predicted_tags, predicted_sentiments
-
-
-
-
-
-
-

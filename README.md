@@ -12,7 +12,6 @@ El sistema desarrollado procesa textos para identificar entidades como personas,
 - `src/`: Incluye el código fuente del proyecto.
 - `conll2003_data.pkl`: Archivo serializado con los datos preprocesados del conjunto CoNLL-2003.
 
-
 ## Instalación
 
 1. **Clonar el repositorio**:
@@ -45,7 +44,7 @@ El sistema desarrollado procesa textos para identificar entidades como personas,
 Para entrenar los modelos de NER y SA:
 
 ```bash
-python src/train.py
+python -m src.train
 ```
 
 Los pesos entrenados se guardarán en `models/`.
@@ -55,7 +54,7 @@ Los pesos entrenados se guardarán en `models/`.
 Para evaluar los modelos:
 
 ```bash
-python src/evaluate.py
+python -m src.evaluate
 ```
 
 ### Generación de Alertas
@@ -63,12 +62,13 @@ python src/evaluate.py
 Para generar alertas a partir de nuevos textos:
 
 ```bash
-python src/generate_alerts.py --input_path path/to/input.txt --output_path path/to/alerts.txt
+
 ```
 
 ## Conjunto de Datos
 
-Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.pkl` debe estar en el directorio principal. 
+Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.pkl` debe estar en el directorio principal.
+
 ## Contribuciones
 
 1. Haz un fork del repositorio
@@ -77,8 +77,6 @@ Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.
 4. Sube los cambios: `git push origin feature/nueva-funcionalidad`
 5. Abre un Pull Request
 
-
 ## Contacto
 
 Para consultas o sugerencias, contactar con el equipo del proyecto o el profesor responsable de la asignatura.
-
