@@ -11,7 +11,7 @@ El sistema desarrollado procesa textos para identificar entidades como personas,
 - `data/`: Contiene los conjuntos de datos utilizados en el proyecto.
 - `src/`: Incluye el código fuente del proyecto.
 - `conll2003_data.pkl`: Archivo serializado con los datos preprocesados del conjunto CoNLL-2003.
-- `.gitignore`: Especifica los archivos y directorios que Git debe ignorar.
+
 
 ## Instalación
 
@@ -35,23 +35,10 @@ El sistema desarrollado procesa textos para identificar entidades como personas,
 
    ```bash
    pip install -r requirements.txt
-   ```
-
-   Si el archivo `requirements.txt` no está disponible, instala manualmente:
-
-   ```bash
-   pip install torch torchtext torchcrf torch_geometric spacy pandas numpy
+   python -m spacy download en_core_web_sm
    ```
 
 ## Uso
-
-### Preprocesamiento de Datos
-
-Asegúrate de que los datos estén en el directorio `data/`. Luego ejecuta:
-
-```bash
-python src/preprocess.py
-```
 
 ### Entrenamiento de Modelos
 
@@ -81,8 +68,7 @@ python src/generate_alerts.py --input_path path/to/input.txt --output_path path/
 
 ## Conjunto de Datos
 
-Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.pkl` debe estar en el directorio principal. Puedes generarlo ejecutando el script de preprocesamiento.
-
+Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.pkl` debe estar en el directorio principal. 
 ## Contribuciones
 
 1. Haz un fork del repositorio
