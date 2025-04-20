@@ -318,14 +318,26 @@ class Accuracy:
         self.total = 0
 
 
+def save_model(model: torch.nn.Module, config, name: str) -> None:
+    """Guarda el modelo completo junto con su configuración."""
+    if not os.path.isdir("models"):
+        os.makedirs("models")
+    torch.save(
+        {"model": model, "config": config}, f"models/{name}.pt"
+    )
+    print(f"Modelo guardado como: models/{name}.pt")
+
+
 def load_model_and_config(model_name: str) -> torch.nn.Module:
+    """Carga un modelo completo guardado."""
     model_path = f"models/{model_name}.pt"
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model {model_name} not found at {model_path}")
-    checkpoint = torch.load(model_path, weights_only=False)
+    
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    model = checkpoint["model"]
     config = checkpoint["config"]
-    model = NNCRF(config)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    
     return model, config
 
 
@@ -339,11 +351,3 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
-
-def save_model(model: torch.nn.Module, config, name: str) -> None:
-    if not os.path.isdir("models"):
-        os.makedirs("models")
-    torch.save(
-        {"model_state_dict": model.state_dict(), "config": config}, f"models/{name}.pt"
-    )

@@ -224,7 +224,7 @@ def main(model_names=None):
     
     # Cargar una vez los loaders
     config_tmp = load_model_and_config(model_names[0])[1]
-    train_loader, val_loader, test_loader = load_umt_loaders(config_tmp, batch_size=32)
+    _, _, test_loader = load_umt_loaders(config_tmp, batch_size=32)
     
     all_results = []
     
@@ -236,40 +236,20 @@ def main(model_names=None):
         model, config = load_model_and_config(model_name)
         model.to(device)
         
-        # Evaluar en test
+        # Evaluar solo en test
         test_metrics = evaluate(model, test_loader, device, config, "Test")
         
-        # Evaluar en validación
-        val_metrics = evaluate(model, val_loader, device, config, "Validation")
-        
-        # Evaluar en entrenamiento
-        train_metrics = evaluate(model, train_loader, device, config, "Train")
-        
-        # Mostrar resumen comparativo
+        # Mostrar solo las métricas de test
         print("\n" + "=" * 50)
-        print("RESUMEN COMPARATIVO")
+        print("RESULTADOS DE TEST")
         print("=" * 50)
-        print(f"                  Train       Validation  Test")
-        print(
-            f"NER Accuracy:     {train_metrics['train_acc_ner']:.4f}       {val_metrics['validation_acc_ner']:.4f}      {test_metrics['test_acc_ner']:.4f}"
-        )
-        print(
-            f"NER F1:           {train_metrics['train_f1_ner']:.4f}       {val_metrics['validation_f1_ner']:.4f}      {test_metrics['test_f1_ner']:.4f}"
-        )
-        print(
-            f"Sentiment Acc:    {train_metrics['train_acc_sa']:.4f}       {val_metrics['validation_acc_sa']:.4f}      {test_metrics['test_acc_sa']:.4f}"
-        )
-        print(
-            f"Sentiment F1:     {train_metrics['train_f1_sa']:.4f}       {val_metrics['validation_f1_sa']:.4f}      {test_metrics['test_f1_sa']:.4f}"
-        )
+        print(f"NER Accuracy:    {test_metrics['test_acc_ner']:.4f}")
+        print(f"NER F1:          {test_metrics['test_f1_ner']:.4f}")
+        print(f"Sentiment Acc:   {test_metrics['test_acc_sa']:.4f}")
+        print(f"Sentiment F1:    {test_metrics['test_f1_sa']:.4f}")
         
-        # Combinar todas las métricas en un solo diccionario
-        combined_metrics = {}
-        combined_metrics.update(train_metrics)
-        combined_metrics.update(val_metrics)
-        combined_metrics.update(test_metrics)
-        
-        all_results.append(combined_metrics)
+        # Guardar métricas para comparación
+        all_results.append(test_metrics)
     
     # Generar gráficos comparativos si hay más de un modelo
     if len(model_names) > 1:
@@ -280,4 +260,9 @@ def main(model_names=None):
 
 
 if __name__ == "__main__": 
-    main(['combined_best_model'])
+    parser = argparse.ArgumentParser(description="Evaluar y comparar modelos")
+    parser.add_argument('--models', nargs='+', default=["combined_best_model"], 
+                        help='Lista de nombres de modelos a evaluar')
+    args = parser.parse_args()
+    
+    main(args.models)

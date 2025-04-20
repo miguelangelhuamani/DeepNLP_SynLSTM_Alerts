@@ -135,7 +135,7 @@ class NNCRF(nn.Module):
             # LSTM estándar para NER (sin usar gcn_out)
             self.lstm_ner = nn.LSTM(
                 word_feat_dim,
-                config.hidden_dim // 2,
+                config.hidden_dim,
                 num_layers=1,
                 batch_first=True,
             )
@@ -170,12 +170,7 @@ class NNCRF(nn.Module):
             nn.Linear(64, 2),
         )
 
-    def focal_loss(self, logits, targets, alpha=0.5, gamma=2.0):
-        """Focal Loss para combatir el desbalance de clases y ejemplos difíciles."""
-        CE = F.cross_entropy(logits, targets, reduction="none")
-        pt = torch.exp(-CE)
-        loss = alpha * (1 - pt) ** gamma * CE
-        return loss.mean()
+
 
     def forward(
         self,
@@ -258,12 +253,7 @@ class NNCRF(nn.Module):
             )
 
             # Pérdida SA
-            loss_sa = self.focal_loss(
-                emissions_sa,
-                sentiment_labels,
-                alpha=0.7,
-                gamma=2.0,
-            )
+            loss_sa = F.cross_entropy(emissions_sa, sentiment_labels)
 
             # Pérdida combinada
             loss = loss_ner + loss_sa

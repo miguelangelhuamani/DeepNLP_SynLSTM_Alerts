@@ -205,7 +205,7 @@ def main():
     )
 
     print(
-        f"\n====== Training with OneCycle LR (base_lr={LEARNING_RATE}, max_lr={LEARNING_RATE*MAX_LR_FACTOR}) ======"
+        f"\n====== Training with ReduceLROnPlateau LR (base_lr={LEARNING_RATE}, max_lr={LEARNING_RATE*MAX_LR_FACTOR}) ======"
     )
 
     model = NNCRF(config).to(device)
@@ -234,7 +234,7 @@ def main():
     total_steps = len(train_loader) * EPOCHS // GRAD_ACCUM_STEPS
 
     # Alternativa: ReduceLROnPlateau - reduce LR cuando la métrica se estanca
-    scheduler_sa = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=0.5, patience=2, min_lr=1e-6, verbose=True
     )
 
@@ -263,7 +263,7 @@ def main():
         val_loss, val_metrics = validate(model, val_loader, device, config)
 
         # Actualizar scheduler basado en la métrica de validación
-        scheduler_sa.step(val_metrics["val_f1_sa"])
+        scheduler.step(val_metrics["val_f1_sa"])
 
         # ====== AÑADIR AQUÍ - Mostrar y registrar pérdidas ======
         # Mostrar pérdidas en consola
