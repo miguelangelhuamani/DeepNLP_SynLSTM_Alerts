@@ -77,10 +77,11 @@ python -m src.evaluate
 
 ### Generación de Alertas
 
-Para generar alertas a partir de nuevos textos:
+Para generar alertas a partir de nuevos textos,
+escribaa su texto en el script new_prediction.py y ejecute:
 
 ```bash
-
+python -m src.new_prediction
 ```
 
 ## Conjunto de Datos
