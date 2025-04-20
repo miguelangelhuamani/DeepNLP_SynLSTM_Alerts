@@ -83,6 +83,19 @@ escribaa su texto en el script new_prediction.py y ejecute:
 ```bash
 python -m src.new_prediction
 ```
+## Modelos Generados
+
+El código permite generar cinco variantes del modelo final, controlando únicamente tres parámetros:
+
+| Modelo   | use\_char\_embs | use\_separate\_lstms | use\_syn\_lstm |
+|----------|------------------|-----------------------|----------------|
+| Model A  | True             | True                  | True           |
+| Model B  | False            | True                  | True           |
+| Model C  | False            | False                 | True           |
+| Model D  | False            | False                 | False          |
+| Model E  | True             | False                 | True           |
+
+Estos flags permiten comparar el rendimiento y complejidad de arquitecturas con/sin embeddings de caracteres, SynLSTM y separación de LSTMs para NER/SA.
 
 ## Conjunto de Datos
 
