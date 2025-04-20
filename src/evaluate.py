@@ -2,6 +2,8 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import numpy as np
 from src.utils import (
     load_umt_loaders,
     Accuracy,
@@ -10,6 +12,7 @@ from src.utils import (
     F1Score,
 )
 from src.config import Config
+import argparse
 
 # Configurar el dispositivo
 device: torch.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -131,45 +134,150 @@ def evaluate(
     return metrics
 
 
-def main():
-    model_name = "combined_best_model"
-    model, config = load_model_and_config(model_name)
-    model.to(device)
+def generate_comparison_plots(all_results, model_names):
+    """
+    Genera gráficos comparativos para todos los modelos.
+    
+    Args:
+        all_results: Lista de diccionarios con métricas para cada modelo
+        model_names: Lista con los nombres de los modelos
+    """
+    # Crear directorio para guardar gráficos
+    os.makedirs("plots", exist_ok=True)
+    
+    # Métricas a comparar
+    metrics = [
+        ("test_acc_ner", "NER Accuracy"),
+        ("test_f1_ner", "NER F1 Score"),
+        ("test_acc_sa", "Sentiment Accuracy"),
+        ("test_f1_sa", "Sentiment F1 Score")
+    ]
+    
+    # Generar un gráfico para cada métrica
+    for metric_key, metric_title in metrics:
+        plt.figure(figsize=(12, 6))
+        
+        # Datos para el gráfico
+        values = [result[metric_key] for result in all_results]
+        x = np.arange(len(model_names))
+        width = 0.6
+        
+        # Crear barras
+        bars = plt.bar(x, values, width, color='skyblue')
+        
+        # Añadir valor numérico sobre cada barra
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                    f'{height:.4f}', ha='center', va='bottom', fontweight='bold')
+        
+        # Configurar etiquetas y título
+        plt.xlabel('Modelo')
+        plt.ylabel(metric_title)
+        plt.title(f'Comparativa de {metric_title} entre modelos')
+        plt.xticks(x, model_names, rotation=45, ha='right')
+        plt.ylim(0, 1.05)  # Ajustar los límites del eje y
+        plt.tight_layout()
+        
+        # Guardar gráfico
+        plt.savefig(f"plots/{metric_key}_comparison.png")
+        plt.close()
+    
+    # Crear gráfico combinado para test
+    plt.figure(figsize=(14, 10))
+    
+    x = np.arange(len(model_names))
+    width = 0.2
+    
+    # Crear barras para cada métrica
+    plt.bar(x - width*1.5, [r["test_acc_ner"] for r in all_results], width, label='NER Accuracy', color='skyblue')
+    plt.bar(x - width/2, [r["test_f1_ner"] for r in all_results], width, label='NER F1', color='royalblue')
+    plt.bar(x + width/2, [r["test_acc_sa"] for r in all_results], width, label='SA Accuracy', color='lightcoral')
+    plt.bar(x + width*1.5, [r["test_f1_sa"] for r in all_results], width, label='SA F1', color='firebrick')
+    
+    # Configurar etiquetas
+    plt.xlabel('Modelo')
+    plt.ylabel('Puntuación')
+    plt.title('Comparativa de todas las métricas entre modelos')
+    plt.xticks(x, model_names, rotation=45, ha='right')
+    plt.ylim(0, 1.05)
+    plt.legend()
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    
+    # Guardar gráfico combinado
+    plt.savefig("plots/all_metrics_comparison.png")
+    plt.close()
+    
+    print(f"\nGráficos guardados en el directorio 'plots/'")
 
-    # Cargar los loaders
-    train_loader, val_loader, test_loader = load_umt_loaders(config, batch_size=32)
 
-    print("\n" + "=" * 50)
-    print("EVALUACIÓN COMPLETA DEL MODELO")
-    print("=" * 50)
+def main(model_names=None):
+    """
+    Evalúa varios modelos y genera comparativas gráficas.
+    
+    Args:
+        model_names: Lista de nombres de modelos a evaluar
+    """
+    if model_names is None:
+        model_names = ["combined_best_model"]
+    
+    # Cargar una vez los loaders
+    config_tmp = load_model_and_config(model_names[0])[1]
+    train_loader, val_loader, test_loader = load_umt_loaders(config_tmp, batch_size=32)
+    
+    all_results = []
+    
+    for model_name in model_names:
+        print("\n" + "=" * 50)
+        print(f"EVALUACIÓN DEL MODELO: {model_name}")
+        print("=" * 50)
+        
+        model, config = load_model_and_config(model_name)
+        model.to(device)
+        
+        # Evaluar en test
+        test_metrics = evaluate(model, test_loader, device, config, "Test")
+        
+        # Evaluar en validación
+        val_metrics = evaluate(model, val_loader, device, config, "Validation")
+        
+        # Evaluar en entrenamiento
+        train_metrics = evaluate(model, train_loader, device, config, "Train")
+        
+        # Mostrar resumen comparativo
+        print("\n" + "=" * 50)
+        print("RESUMEN COMPARATIVO")
+        print("=" * 50)
+        print(f"                  Train       Validation  Test")
+        print(
+            f"NER Accuracy:     {train_metrics['train_acc_ner']:.4f}       {val_metrics['validation_acc_ner']:.4f}      {test_metrics['test_acc_ner']:.4f}"
+        )
+        print(
+            f"NER F1:           {train_metrics['train_f1_ner']:.4f}       {val_metrics['validation_f1_ner']:.4f}      {test_metrics['test_f1_ner']:.4f}"
+        )
+        print(
+            f"Sentiment Acc:    {train_metrics['train_acc_sa']:.4f}       {val_metrics['validation_acc_sa']:.4f}      {test_metrics['test_acc_sa']:.4f}"
+        )
+        print(
+            f"Sentiment F1:     {train_metrics['train_f1_sa']:.4f}       {val_metrics['validation_f1_sa']:.4f}      {test_metrics['test_f1_sa']:.4f}"
+        )
+        
+        # Combinar todas las métricas en un solo diccionario
+        combined_metrics = {}
+        combined_metrics.update(train_metrics)
+        combined_metrics.update(val_metrics)
+        combined_metrics.update(test_metrics)
+        
+        all_results.append(combined_metrics)
+    
+    # Generar gráficos comparativos si hay más de un modelo
+    if len(model_names) > 1:
+        print("\n" + "=" * 50)
+        print("GENERANDO GRÁFICOS COMPARATIVOS")
+        print("=" * 50)
+        generate_comparison_plots(all_results, model_names)
 
-    # Evaluar en test
-    test_metrics = evaluate(model, test_loader, device, config, "Test")
 
-    # Evaluar en validación
-    val_metrics = evaluate(model, val_loader, device, config, "Validation")
-
-    # Evaluar en entrenamiento
-    train_metrics = evaluate(model, train_loader, device, config, "Train")
-
-    # Mostrar resumen comparativo
-    print("\n" + "=" * 50)
-    print("RESUMEN COMPARATIVO")
-    print("=" * 50)
-    print(f"                  Train       Validation  Test")
-    print(
-        f"NER Accuracy:     {train_metrics['train_acc_ner']:.4f}       {val_metrics['validation_acc_ner']:.4f}      {test_metrics['test_acc_ner']:.4f}"
-    )
-    print(
-        f"NER F1:           {train_metrics['train_f1_ner']:.4f}       {val_metrics['validation_f1_ner']:.4f}      {test_metrics['test_f1_ner']:.4f}"
-    )
-    print(
-        f"Sentiment Acc:    {train_metrics['train_acc_sa']:.4f}       {val_metrics['validation_acc_sa']:.4f}      {test_metrics['test_acc_sa']:.4f}"
-    )
-    print(
-        f"Sentiment F1:     {train_metrics['train_f1_sa']:.4f}       {val_metrics['validation_f1_sa']:.4f}      {test_metrics['test_f1_sa']:.4f}"
-    )
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": 
+    main(['combined_best_model'])

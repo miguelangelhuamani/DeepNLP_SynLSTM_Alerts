@@ -278,8 +278,7 @@ def main():
             best_val_f1_ner = val_metrics["val_f1_ner"]
             best_epoch_ner = epoch
             patience_counter_ner = 0
-            save_model(model, config, "ner_best_model")
-            print(f"New best NER model saved! F1: {best_val_f1_ner:.4f}")
+            
         else:
             patience_counter_ner += 1
             print(
@@ -291,8 +290,7 @@ def main():
             best_val_f1_sa = val_metrics["val_f1_sa"]
             best_epoch_sa = epoch
             patience_counter_sa = 0
-            save_model(model, config, "sa_best_model")
-            print(f"New best SA model saved! F1: {best_val_f1_sa:.4f}")
+            
         else:
             patience_counter_sa += 1
             print(

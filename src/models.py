@@ -90,15 +90,25 @@ class MyLSTM(nn.Module):
 
 
 class NNCRF(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, use_char_embs=True, use_separate_lstms=True, use_syn_lstm=True):
         super().__init__()
         self.pad_idx = config.word2idx[config.PAD]
         self.device = config.device
+        
+        # Parámetros de configuración
+        self.use_char_embs = use_char_embs
+        self.use_separate_lstms = use_separate_lstms  
+        self.use_syn_lstm = use_syn_lstm
 
-        # BiLSTM para caracteres
-        self.char_bilstm = CharBiLSTM(
-            config.char_vocab_size, config.char_emb_dim, config.char_hidden_dim
-        )
+        # BiLSTM para caracteres (solo si use_char_embs es True)
+        if self.use_char_embs:
+            self.char_bilstm = CharBiLSTM(
+                config.char_vocab_size, config.char_emb_dim, config.char_hidden_dim
+            )
+            # Dimensión de características de palabras + caracteres
+            word_feat_dim = config.word_emb_dim + config.char_hidden_dim
+        else:
+            word_feat_dim = config.word_emb_dim
 
         # Embedding para palabras
         self.word_emb = nn.Embedding.from_pretrained(
@@ -110,26 +120,38 @@ class NNCRF(nn.Module):
 
         # GCN (conjunto de características combinadas)
         self.gcn = GCNLayer(
-            config.word_emb_dim + config.dep_emb_dim, config.gcn_hidden_dim
+            word_feat_dim + config.dep_emb_dim, config.gcn_hidden_dim
         )
 
-        # Syn-LSTM para combinar todas las características
-        self.syn_lstm = MyLSTM(
-            config.word_emb_dim + config.gcn_hidden_dim,
-            config.hidden_dim,
-            config.gcn_hidden_dim,
-        )
+        # Configuración de LSTMs según parámetros
+        if self.use_syn_lstm:
+            # MyLSTM personalizada que usa información del grafo
+            self.syn_lstm = MyLSTM(
+                word_feat_dim + config.gcn_hidden_dim,
+                config.hidden_dim,
+                config.gcn_hidden_dim,
+            )
+        else:
+            # LSTM estándar para NER (sin usar gcn_out)
+            self.lstm_ner = nn.LSTM(
+                word_feat_dim,
+                config.hidden_dim // 2,
+                num_layers=1,
+                batch_first=True,
+            )
 
-        self.lstm_sa = nn.LSTM(
-            config.word_emb_dim,
-            config.hidden_dim // 2,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True,
-        )
+        # LSTM separada para SA si use_separate_lstms es True
+        if self.use_separate_lstms:
+            self.lstm_sa = nn.LSTM(
+                word_feat_dim,
+                config.hidden_dim // 2,
+                num_layers=2,
+                batch_first=True,
+                bidirectional=True,
+            )
 
         # Capa de salida para NER
-        self.hidden2tag_ner = self.hidden2tag_ner = nn.Sequential(
+        self.hidden2tag_ner = nn.Sequential(
             nn.Dropout(0.3),
             nn.Linear(config.hidden_dim, config.hidden_dim // 2),
             nn.LayerNorm(config.hidden_dim // 2),
@@ -138,9 +160,10 @@ class NNCRF(nn.Module):
         )
 
         # Capa de salida para Sentimiento (SA)
+        sa_input_dim = config.hidden_dim * 3  # Para 3 tipos de pooling (avg, max, last)
         self.hidden2tag_sa = nn.Sequential(
             nn.Dropout(0.3),
-            nn.Linear(config.hidden_dim * 3, 64),  # Reducir dimensionalidad
+            nn.Linear(sa_input_dim, 64),  # Reducir dimensionalidad
             nn.LayerNorm(64),  # Normalización para estabilidad
             nn.ReLU(),
             nn.Dropout(0.4),
@@ -166,23 +189,23 @@ class NNCRF(nn.Module):
     ):
         batch_size, seq_len = word_inputs.size()
 
-        # Paso 1: Obtener características a partir de BiLSTM de caracteres
-        char_features = self.char_bilstm(char_inputs, char_lens)
-        char_features = char_features.view(
-            batch_size, seq_len, -1
-        )  # Recuperamos (B, S, dim)
-
-        # Paso 2: Obtener embeddings de palabras
+        # Paso 1: Obtener embeddings de palabras
         word_embeddings = self.word_emb(word_inputs)
+        
+        # Paso 2: Procesar características de caracteres si está habilitado
+        if self.use_char_embs:
+            char_features = self.char_bilstm(char_inputs, char_lens)
+            char_features = char_features.view(batch_size, seq_len, -1)
+            # Combinar word_embeddings con char_features
+            word_features = torch.cat([word_embeddings, char_features], dim=-1)
+        else:
+            word_features = word_embeddings
 
-        # Paso 3: Concatenar word + char features
-        input_gcn = word_embeddings
-        batch_graph.x = input_gcn.view(-1, input_gcn.shape[-1])  # (batch*seq_len, dim)
+        # Paso 3: Preparar entrada para GCN
+        batch_graph.x = word_features.view(-1, word_features.shape[-1])
 
         # Paso 4: Propagar dependencias a través de GCN
-        dep_embs = self.dep_embedding(
-            batch_graph.dep_labels
-        )  # (num_edges, dep_emb_dim)
+        dep_embs = self.dep_embedding(batch_graph.dep_labels)
         edge_targets = batch_graph.edge_index[1]
 
         dep_embs_expanded = torch.zeros(
@@ -196,59 +219,67 @@ class NNCRF(nn.Module):
         gcn_out = self.gcn(batch_graph.x, batch_graph.edge_index)
         gcn_out = gcn_out.view(batch_size, seq_len, -1)
 
-        # Paso 6: Combinar todas las características
-        combined_input = torch.cat([word_embeddings, gcn_out], dim=-1)
-        lstm_out = self.syn_lstm(combined_input, gcn_out)
+        # Paso 6: Procesar secuencia para NER
+        if self.use_syn_lstm:
+            # Usando MyLSTM personalizada con información del grafo
+            combined_input = torch.cat([word_features, gcn_out], dim=-1)
+            lstm_out_ner = self.syn_lstm(combined_input, gcn_out)
+        else:
+            # Usando LSTM estándar sin información del grafo
+            lstm_out_ner, _ = self.lstm_ner(word_features)
 
-        lstm_out_sa, _ = self.lstm_sa(word_embeddings)
+        # Paso 7: Procesar secuencia para SA
+        if self.use_separate_lstms:
+            # Usar una LSTM separada para SA
+            lstm_out_sa, _ = self.lstm_sa(word_features)
+        else:
+            # Usar la misma salida de LSTM para SA
+            lstm_out_sa = lstm_out_ner
 
-        # Paso 7: Capa de salida para NER
-        emissions_ner = self.hidden2tag_ner(lstm_out)  # (B, S, label_size)
+        # Paso 8: Capa de salida para NER
+        emissions_ner = self.hidden2tag_ner(lstm_out_ner)  # (B, S, label_size)
         mask = word_inputs != self.pad_idx
 
-        # Paso 8: Capa de salida para Sentimiento (SA)
-        # Combina diferentes estrategias de pooling
-        avg_pool = torch.mean(lstm_out_sa, dim=1)  # Average pooling
-        max_pool, _ = torch.max(lstm_out_sa, dim=1)  # Max pooling
-        last_token = lstm_out_sa[:, -1, :]  # Último token
+        # Paso 9: Capa de salida para Sentimiento (SA)
+        # Combinar diferentes estrategias de pooling
+        avg_pool = torch.mean(lstm_out_sa, dim=1)
+        max_pool, _ = torch.max(lstm_out_sa, dim=1)
+        last_token = lstm_out_sa[:, -1, :]
         pooled_features = torch.cat([avg_pool, max_pool, last_token], dim=1)
 
         emissions_sa = self.hidden2tag_sa(pooled_features)
-        emissions_sa_reduced = emissions_sa
 
         if tags is not None and sentiment_labels is not None:
-            # Usar solo Cross Entropy para NER (eliminar CRF)
+            # Pérdida NER
             loss_ner = F.cross_entropy(
                 emissions_ner.view(-1, emissions_ner.size(-1)),
                 tags.view(-1),
                 ignore_index=self.pad_idx,
             )
 
-            # Loss para SA usando focal loss
+            # Pérdida SA
             loss_sa = self.focal_loss(
                 emissions_sa,
                 sentiment_labels,
-                alpha=0.7,  # Enfoca más en ejemplos difíciles
+                alpha=0.7,
                 gamma=2.0,
             )
 
+            # Pérdida combinada
             loss = loss_ner + loss_sa
 
+            # Predicciones
             predicted_tags = emissions_ner.argmax(dim=-1)
-
             predicted_tags = [
                 pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)
             ]
-
-            predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
+            predicted_sentiments = emissions_sa.argmax(dim=1)
             return loss, predicted_tags, predicted_sentiments
         else:
-
+            # Modo inferencia
             predicted_tags = emissions_ner.argmax(dim=-1)
-
             predicted_tags = [
                 pred[:length].tolist() for pred, length in zip(predicted_tags, lengths)
             ]
-
-            predicted_sentiments = emissions_sa_reduced.argmax(dim=1)
+            predicted_sentiments = emissions_sa.argmax(dim=1)
             return predicted_tags, predicted_sentiments
