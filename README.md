@@ -1,93 +1,109 @@
-# Práctica Final de Deep Learning y NLP
+# 🧠 DeepNLP_SynLSTM_Alerts
 
-Este proyecto forma parte de la asignatura de Deep Learning y Procesamiento de Lenguaje Natural (NLP). El objetivo es desarrollar un sistema que combine el Reconocimiento de Entidades Nombradas (NER) y el Análisis de Sentimiento (SA) para generar alertas automáticas a partir de artículos de noticias y publicaciones en redes sociales.
+A multitask NLP system that performs **Named Entity Recognition (NER)** and **Sentiment Analysis (SA)** to generate real-time, structured alerts from social media posts or news articles. The architecture integrates custom modules including character-level embeddings, dependency-based Graph Convolutional Networks, and a SynLSTM encoder for linguistic context.
 
-## Descripción del Proyecto
+---
 
-El sistema desarrollado procesa textos para identificar entidades como personas, organizaciones, valores monetarios, ubicaciones, etc., utilizando una red LSTM personalizada. Además, clasifica el sentimiento del texto (positivo, neutral o negativo) mediante otra red neuronal. Finalmente, combina las salidas de NER y SA para generar alertas contextuales relevantes.
+## 💡 Overview
 
-## Estructura del Repositorio
+This system processes raw text to detect named entities (such as persons, organizations, monetary values, locations, etc.) and simultaneously classify the sentiment (positive, neutral, or negative). The outputs of both tasks are combined to generate contextual alerts, which can be used for trend detection, early warning systems, or monitoring pipelines.
 
-- `data/`: Contiene los conjuntos de datos utilizados en el proyecto.
-- `src/`: Incluye el código fuente del proyecto.
-- `conll2003_data.pkl`: Archivo serializado con los datos preprocesados del conjunto CoNLL-2003.
+---
 
-## Instalación
+## 🧱 Architecture
 
-1. **Clonar el repositorio**:
+The core architecture supports flexible multitask modeling, with several variants:
+
+- **Character-level BiLSTM** for fine-grained token representation
+- **GCNs** over syntactic dependency trees
+- **SynLSTM** to integrate syntactic roles into LSTM updates
+- Independent or shared task-specific LSTMs for NER and SA
+
+## 📁 Repository Structure
+
+- `data/`: Contains the datasets used in the project.
+- `src/`: Includes the source code.
+- `conll2003_data.pkl`: Serialized file with the preprocessed CoNLL-2003 dataset.
+
+---
+
+## ⚙️ Installation
+
+1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/ndelval/PracticaFinalDeepNLP.git
+   git clone https://github.com/miguelangelhuamani/DeepNLP_SynLSTM_Alerts.git
    ```
 
-2. **Instalar las dependencias**:
+2. **Install dependencies**:
 
-   Se recomienda crear un entorno virtual para gestionar las dependencias:
+   It's recommended to use a virtual environment to manage dependencies:
 
    ```bash
    cd PracticaFinalDeepNLP
    python3 -m venv env
-   source env/bin/activate  # En Windows: 'env\Scripts\activate'
+   source env/bin/activate  # On Windows: 'env\Scripts\activate'
    ```
 
-   Luego:
+   Then install the packages:
 
    ```bash
    pip install -r requirements.txt
    python -m spacy download en_core_web_sm
    ```
-3. **Descargar los embeddings de GloVe**
+3. **Download GloVe embeddings**
 
-   Para que el sistema funcione correctamente, necesitas los vectores preentrenados de GloVe (100 dimensiones).
+   To ensure the system works correctly, you need the pre-trained GloVe vectors (100 dimensions).
 
-   1. Accede a la siguiente página y se descargará el archivo `.zip` automáticamente:  
+   1. Go to the following page — the .zip file will download automatically:
       [http://nlp.stanford.edu/data/glove.6B.zip](http://nlp.stanford.edu/data/glove.6B.zip)
    
-   2. Extrae el contenido del archivo ZIP.
+   2. Extract the contents of the ZIP file.
    
-   3. Copia el fichero `glove.6B.100d.txt` a la **raíz del proyecto**, es decir, al mismo nivel que la carpeta `src/`, como se muestra a continuación:
+   3. Copy the file glove.6B.100d.txt to the root directory of the project, at the same level as src/, like this:
       ```bash
-      /tu-proyecto/
+      /your-project/
       ├── src/
       ├── glove.6B.100d.txt
       ├── requirements.txt
       ├── venv/
       └── README.md
+      ```
 
 
-## Uso
+## 🚀 Usage
 
-### Entrenamiento de Modelos
+### Model Training
 
-Para entrenar los modelos de NER y SA:
+To train the NER and SA models:
 
 ```bash
 python -m src.train
 ```
 
-Los pesos entrenados se guardarán en `models/`.
+The trained weights will be saved in the `models/` directory.
 
-### Evaluación
+### Evaluation
 
-Para evaluar los modelos:
+To evaluate the models:
 
 ```bash
 python -m src.evaluate
 ```
 
-### Generación de Alertas
+### Alert Generation
 
-Para generar alertas a partir de nuevos textos,
-escribaa su texto en el script new_prediction.py y ejecute:
+To generate alerts from new input text:
+Edit your input sentence directly in the `new_prediction.py` script and run:
 
 ```bash
 python -m src.new_prediction
 ```
-## Modelos Generados
+## 🧠 Generated Models
 
-El código permite generar cinco variantes del modelo final, controlando únicamente tres parámetros:
+The system allows the creation of five different model variants, controlled by three configuration flags:
 
-| Modelo   | use\_char\_embs | use\_separate\_lstms | use\_syn\_lstm |
+| Model    | use\_char\_embs | use\_separate\_lstms | use\_syn\_lstm |
 |----------|------------------|-----------------------|----------------|
 | Model A  | True             | True                  | True           |
 | Model B  | False            | True                  | True           |
@@ -95,20 +111,20 @@ El código permite generar cinco variantes del modelo final, controlando únicam
 | Model D  | False            | False                 | False          |
 | Model E  | True             | False                 | True           |
 
-Estos flags permiten comparar el rendimiento y complejidad de arquitecturas con/sin embeddings de caracteres, SynLSTM y separación de LSTMs para NER/SA.
+These flags enable comparisons of model performance and complexity when using or excluding character embeddings, SynLSTM, and task-specific LSTM layers.
 
-## Conjunto de Datos
+## 📊 Dataset
 
-Se utiliza el conjunto de datos CoNLL-2003 para NER. El archivo `conll2003_data.pkl` debe estar en el directorio principal.
+The system uses the CoNLL-2003 dataset for Named Entity Recognition. The file `conll2003_data.pkl` must be located in the project’s root directory.
 
-## Contribuciones
+## 🤝 Contributions
 
-1. Haz un fork del repositorio
-2. Crea una rama nueva: `git checkout -b feature/nueva-funcionalidad`
-3. Realiza los cambios y haz commit: `git commit -am 'Nueva funcionalidad'`
-4. Sube los cambios: `git push origin feature/nueva-funcionalidad`
-5. Abre un Pull Request
+1. Fork the repository
+2. Create a new branch: `git checkout -b feature/new-feature`
+3. Make your changes and commit: `git commit -am 'Add new feature'`
+4. Push to your branch: `git push origin feature/new-feature`
+5. Open a Pull Request
 
-## Contacto
+## 📬 Contact
 
-Para consultas o sugerencias, contactar con el equipo del proyecto o el profesor responsable de la asignatura.
+For questions or suggestions, feel free to contact the project team via GitHub Issues or Pull Requests.
