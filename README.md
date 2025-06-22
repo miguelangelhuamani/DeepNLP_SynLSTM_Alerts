@@ -1,6 +1,6 @@
 # 🧠 DeepNLP_SynLSTM_Alerts
 
-A multitask NLP system that performs **Named Entity Recognition (NER)** and **Sentiment Analysis (SA)** to generate real-time, structured alerts from social media posts or news articles. The architecture integrates custom modules including character-level embeddings, dependency-based Graph Convolutional Networks, and a SynLSTM encoder for linguistic context.
+A multitask NLP system that performs **Named Entity Recognition (NER)** and **Sentiment Analysis (SA)** to generate real-time, structured alerts from social media posts or news articles. The architecture integrates custom modules including character-level embeddings, dependency-based Graph Convolutional Networks, and a SynLSTM encoder for linguistic context. 📄 For a complete theoretical and architectural explanation of the system, please refer to the [project report](./DeepNLP_SynLSTM_Alerts_Report.pdf).
 
 ---
 
